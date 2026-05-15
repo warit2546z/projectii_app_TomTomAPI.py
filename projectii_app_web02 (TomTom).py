@@ -42,7 +42,7 @@ def fetch_today_oil_price():
 # ==========================================
 st.set_page_config(page_title="Milk Run Optimization", page_icon="🚚", layout="wide")
 st.title("🚚 ระบบวางแผนเส้นทางขนส่งนม (VRP Optimization)")
-st.markdown("ระบบวิเคราะห์เส้นทางอัจฉริยะ พร้อมการนำทางจริง (TomTom API)")
+st.markdown("ระบบวิเคราะห์เส้นทางอัจฉริยะ พร้อมการนำทางจริง (TomTom API) และฟังก์ชันกั้นพื้นที่ห้ามผ่าน")
 
 # ==========================================
 # 2. แผงควบคุมด้านข้าง (Sidebar)
@@ -73,9 +73,13 @@ with st.sidebar:
     ICE_PER_COOLER = st.number_input("น้ำแข็ง/ถัง (L)", min_value=0.0, value=75.0, step=1.0)
     DEAD_SPACE_RATIO = 0.15 
     
-    # ✨ ส่วนที่ปรับแก้ให้ดูคลีนตามความต้องการ
     st.header("🚧 ข้อจำกัดเส้นทาง")
     TRAVEL_MODE = st.selectbox("ประเภทยานพาหนะ", ["car", "van", "truck", "motorcycle"], index=0) 
+    
+    # ✨ นำฟังก์ชันกั้นพื้นที่กลับมาแล้วครับ
+    AVOID_AREA = st.text_area("พิกัดพื้นที่ห้ามผ่าน (ขึ้นบรรทัดใหม่สำหรับกล่องถัดไป)", value="", height=100)
+    st.caption("รูปแบบ: Lat,Long มุมที่ 1 : Lat,Long มุมที่ 2")
+    st.caption("เช่น:\n14.875,102.015:14.874,102.016")
 
 TOTAL_NET_CAPACITY = int((450 - ICE_PER_COOLER) * NUM_COOLERS)
 EMISSION_FACTOR = 2.70757206 
@@ -174,12 +178,37 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         route_indices.append(0)
 
         # ----------------------------------------------------
-        # การเรียก API TomTom
+        # การเรียก API TomTom พร้อมส่งข้อมูลพื้นที่ห้ามผ่าน
         # ----------------------------------------------------
         url = f"https://api.tomtom.com/routing/1/calculateRoute/{':'.join([f'{coords[n][0]},{coords[n][1]}' for n in route_indices])}/json"
         
         api_params = {"key": API_KEY, "travelMode": TRAVEL_MODE}
-        res = requests.get(url, params=api_params)
+        
+        rectangles = []
+        if AVOID_AREA.strip() != "":
+            for line in AVOID_AREA.strip().split('\n'):
+                line = line.strip()
+                if not line: continue
+                try:
+                    p1_str, p2_str = line.split(':')
+                    lat1, lon1 = map(float, p1_str.split(','))
+                    lat2, lon2 = map(float, p2_str.split(','))
+                    
+                    min_lat, max_lat = min(lat1, lat2), max(lat1, lat2)
+                    min_lon, max_lon = min(lon1, lon2), max(lon1, lon2)
+                    
+                    rectangles.append({
+                        "southWestCorner": {"latitude": min_lat, "longitude": min_lon},
+                        "northEastCorner": {"latitude": max_lat, "longitude": max_lon}
+                    })
+                except Exception as e:
+                    pass 
+            
+        if rectangles:
+            payload = { "avoidAreas": { "rectangles": rectangles } }
+            res = requests.post(url, params=api_params, json=payload)
+        else:
+            res = requests.get(url, params=api_params)
         
         if res.status_code == 200:
             route_data = res.json()['routes'][0]
@@ -241,6 +270,25 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                     else:
                         icon_html = f'''<div style="font-size: 11pt; font-weight: bold; color: white; background-color: #E74C3C; border: 2px solid white; border-radius: 50%; text-align: center; width: 28px; height: 28px; line-height: 24px;">{i}</div>'''
                         folium.Marker([loc['Lat'], loc['Lon']], popup=f"คิว {i}: {loc['ชื่อสถานที่']}", icon=folium.DivIcon(html=icon_html)).add_to(m)
+                
+                # ✨ ฟังก์ชันวาดกล่องสีแดง (พื้นที่ห้ามผ่าน) บนแผนที่
+                if AVOID_AREA.strip() != "":
+                    for i, line in enumerate(AVOID_AREA.strip().split('\n')):
+                        line = line.strip()
+                        if not line: continue
+                        try:
+                            p1_str, p2_str = line.split(':')
+                            lat1, lon1 = map(float, p1_str.split(','))
+                            lat2, lon2 = map(float, p2_str.split(','))
+                            min_lat, max_lat = min(lat1, lat2), max(lat1, lat2)
+                            min_lon, max_lon = min(lon1, lon2), max(lon1, lon2)
+                            
+                            folium.Rectangle(
+                                bounds=[[min_lat, min_lon], [max_lat, max_lon]],
+                                color='#E74C3C', fill=True, fill_color='#E74C3C', fill_opacity=0.3,
+                                name=f'พื้นที่ห้ามผ่าน {i+1}'
+                            ).add_to(m)
+                        except: pass
                 
                 folium.LayerControl().add_to(m)
                 st_folium(m, width="100%", height=500, returned_objects=[])
