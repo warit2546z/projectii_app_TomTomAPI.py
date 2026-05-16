@@ -71,7 +71,6 @@ with st.sidebar:
         st.warning("⚠️ ไม่สามารถดึงข้อมูลราคา Real-time ได้")
         THB_L = st.number_input("ราคาน้ำมัน (THB/L)", min_value=1.0, value=35.0, step=0.5, format="%.2f")
     
-    # ✨ จัดรูปแบบ Interface ใหม่ตามภาพต้นแบบ
     st.header("🚚 จำนวนและประเภทรถ")
     col1, col2 = st.columns(2)
     with col1:
@@ -103,7 +102,6 @@ with st.sidebar:
         km_l_6w = st.number_input("6 ล้อ (km/L)", min_value=1.0, value=6.0, step=0.5, key="km_6")
         idle_6w = st.number_input("6 ล้อ (L/h)", min_value=0.1, value=2.5, step=0.1, key="id_6")
 
-    # สร้างข้อมูลโปรไฟล์รถแต่ละคัน (รองรับ Heterogeneous Fleet)
     active_vehicles = []
     for _ in range(num_pickup): active_vehicles.append({'type': 'รถกระบะ', 'km_l': km_l_pickup, 'idle': idle_pickup, 'capacity': int(cap_pickup)})
     for _ in range(num_box): active_vehicles.append({'type': 'กระบะตู้ทึบ', 'km_l': km_l_box, 'idle': idle_box, 'capacity': int(cap_box)})
@@ -171,7 +169,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
     for i, row in edited_df.iterrows():
         if i == 0: demands.append(0); continue
         
-        # น้ำหนักน้ำนม (ลิตร * 1.03) + น้ำหนักขวดเปล่าพลาสติก HDPE
         w_200cc = float(row.get("200cc", 0)) * 0.221  
         w_2l = float(row.get("2L", 0)) * 2.12        
         w_5l = float(row.get("5L", 0)) * 5.28        
@@ -179,7 +176,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         total_weight_kg = w_200cc + w_2l + w_5l
         demands.append(math.ceil(total_weight_kg * (1.0 + DEAD_SPACE_RATIO)))
     
-    # ดึงขีดจำกัดความจุของรถแต่ละคันออกมาเป็น List 
     vehicle_capacities = [v['capacity'] for v in active_vehicles]
     total_fleet_capacity = sum(vehicle_capacities)
     
@@ -217,8 +213,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
 
         def demand_callback(idx): return demands[manager.IndexToNode(idx)]
         demand_idx = routing.RegisterUnaryTransitCallback(demand_callback)
-        
-        # โยนค่า Array น้ำหนักบรรทุกของรถแต่ละประเภทเข้าสู่สมองกล
         routing.AddDimensionWithVehicleCapacity(demand_idx, 0, vehicle_capacities, True, "Capacity")
 
         search_params = pywrapcp.DefaultRoutingSearchParameters()
@@ -232,8 +226,12 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         for vehicle_id in range(total_vehicles):
             index = routing.Start(vehicle_id)
             route_indices = []
+            route_payload = 0 # ตัวแปรเก็บน้ำหนักรวมของรถแต่ละคัน
+            
             while not routing.IsEnd(index):
-                route_indices.append(manager.IndexToNode(index))
+                node_idx = manager.IndexToNode(index)
+                route_indices.append(node_idx)
+                route_payload += demands[node_idx]
                 index = solution.Value(routing.NextVar(index))
             route_indices.append(manager.IndexToNode(index)) 
             
@@ -241,7 +239,8 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                 all_routes.append({
                     'v_id': vehicle_id, 
                     'v_info': active_vehicles[vehicle_id], 
-                    'indices': route_indices
+                    'indices': route_indices,
+                    'payload': route_payload # นำน้ำหนักที่คำนวณได้ไปใช้งานต่อ
                 })
 
         route_results = []
@@ -299,7 +298,8 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                     'data': data,
                     'indices': indices,
                     'color': map_colors[idx % len(map_colors)],
-                    'v_info': v_info
+                    'v_info': v_info,
+                    'payload': route['payload'] # ส่งค่าไปวาด Progress bar
                 })
             else:
                 st.error(f"❌ API Error สำหรับรถคันที่ {idx+1}: {res.text}")
@@ -311,6 +311,26 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         c3.metric("ปริมาณการปล่อย CO2", f"{total_co2_kg:.2f} kg")
         hh, mm = divmod(max_time_sec // 60, 60)
         c4.metric("เวลาวิ่งนานสุด (คันที่ช้าสุด)", f"{int(hh)} ชม. {int(mm)} นาที")
+
+        # =========================================================
+        # ✨ เพิ่มส่วน UI สำหรับวาดหลอด Progress Bar น้ำหนักสินค้า
+        # =========================================================
+        st.markdown("---")
+        st.subheader("📦 Status การบรรทุกน้ำหนักสินค้าจริงของรถแต่ละคัน (Cargo Payload Status)")
+        
+        for route in route_results:
+            v_info = route['v_info']
+            payload = route['payload']
+            capacity = v_info['capacity']
+            
+            # ป้องกันค่าติดลบหรือล้น 100% จากการปัดเศษของสมองกล
+            progress_ratio = max(0.0, min(payload / capacity, 1.0))
+            percent_int = int(progress_ratio * 100)
+            
+            st.markdown(f"🚚 **{route['car_name']}**: บรรทุกแล้ว {payload:,} kg / {capacity:,} kg ({percent_int}%)")
+            st.progress(progress_ratio)
+            
+        st.markdown("---")
 
         col_map, col_table = st.columns([1.3, 1.7])
         with col_map:
