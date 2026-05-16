@@ -12,7 +12,7 @@ import pandas as pd
 import io
 
 # ==========================================
-# ฟังก์ชันดึงราคาน้ำมัน Real-time (กรองเฉพาะ ดีเซล, 91, 95)
+# ฟังก์ชันดึงราคาน้ำมัน Real-time
 # ==========================================
 @st.cache_data(ttl=21600) 
 def fetch_today_oil_price():
@@ -41,8 +41,8 @@ def fetch_today_oil_price():
 # 1. ตั้งค่าหน้าเพจ UI
 # ==========================================
 st.set_page_config(page_title="Milk Run Optimization", page_icon="🚚", layout="wide")
-st.title("🚚 ระบบวางแผนเส้นทางขนส่งนม (VRP Optimization)")
-st.markdown("ระบบวิเคราะห์เส้นทางอัจฉริยะ พร้อมการนำทางจริง (TomTom API) และฟังก์ชันกั้นพื้นที่ห้ามผ่าน")
+st.title("🚚 ระบบวางแผนเส้นทางขนส่งนม (VRP Weight-Based Optimization)")
+st.markdown("ระบบวิเคราะห์เส้นทางคำนวณจากน้ำหนักจริงรวมบรรจุภัณฑ์ พร้อมการนำทางจริงผ่าน TomTom API")
 
 # ==========================================
 # 2. แผงควบคุมด้านข้าง (Sidebar)
@@ -59,23 +59,18 @@ with st.sidebar:
     oil_data, update_date = fetch_today_oil_price()
     if oil_data:
         st.success(f"อัปเดตราคาล่าสุด: {update_date}")
-        
         oil_list = list(oil_data.keys())
         default_oil_idx = 0
         for i, name in enumerate(oil_list):
             if "ดีเซล" in name:
                 default_oil_idx = i
                 break
-                
         selected_oil = st.selectbox("เลือกชนิดน้ำมัน", oil_list, index=default_oil_idx)
         THB_L = st.number_input("ราคาน้ำมัน (THB/L)", value=float(oil_data[selected_oil]), step=0.5, format="%.2f")
     else:
-        st.warning("⚠️ ไม่สามารถดึงข้อมูลราคา Real-time ได้ (ใช้ราคาประเมิน)")
+        st.warning("⚠️ ไม่สามารถดึงข้อมูลราคา Real-time ได้")
         THB_L = st.number_input("ราคาน้ำมัน (THB/L)", min_value=1.0, value=35.0, step=0.5, format="%.2f")
     
-    # ------------------------------------
-    # ข้อมูลยานพาหนะ
-    # ------------------------------------
     st.header("🚚 ข้อมูลยานพาหนะ")
     st.markdown("**ระบุจำนวนรถแต่ละประเภทที่มีพร้อมใช้งาน**")
     col1, col2 = st.columns(2)
@@ -83,7 +78,6 @@ with st.sidebar:
         num_pickup = st.number_input("รถกระบะ (คัน)", min_value=0, value=0, step=1)
         num_4w = st.number_input("บรรทุก 4 ล้อ (คัน)", min_value=0, value=0, step=1)
     with col2:
-        # ✨ ปรับค่าเริ่มต้นกระบะตู้ทึบเป็น 1
         num_box = st.number_input("กระบะตู้ทึบ (คัน)", min_value=0, value=1, step=1)
         num_6w = st.number_input("บรรทุก 6 ล้อ (คัน)", min_value=0, value=0, step=1)
 
@@ -111,14 +105,12 @@ with st.sidebar:
     for _ in range(num_4w): active_vehicles.append({'type': 'บรรทุก 4 ล้อ', 'km_l': km_l_4w, 'idle': idle_4w})
     for _ in range(num_6w): active_vehicles.append({'type': 'บรรทุก 6 ล้อ', 'km_l': km_l_6w, 'idle': idle_6w})
 
-    st.header("📦 พื้นที่บรรทุก (ต่อคัน)")
-    NUM_COOLERS = st.number_input("จำนวนถัง (ใบ)", min_value=1, value=2, step=1)
-    ICE_PER_COOLER = st.number_input("น้ำแข็ง/ถัง (L)", min_value=0.0, value=75.0, step=1.0)
+    # ✨ ปรับจากพิกัดปริมาตรถังนม เป็นน้ำหนักบรรทุกเพลาสูงสุดของรถจริง (กิโลกรัม)
+    st.header("⚖️ ขีดจำกัดน้ำหนักบรรทุก")
+    MAX_WEIGHT_CAPACITY = st.number_input("น้ำหนักบรรทุกสูงสุดต่อคัน (kg)", min_value=100, value=1100, step=50)
     DEAD_SPACE_RATIO = 0.15 
     
     st.header("🚧 ข้อจำกัดเส้นทาง")
-    
-    # ✨ ปรับปรุงการเลือกประเภทนำทางให้มี Emoji
     travel_mode_options = {
         "🚗 รถยนต์ (Car)": "car",
         "🚐 รถตู้ (Van)": "van",
@@ -126,13 +118,10 @@ with st.sidebar:
         "🏍️ รถจักรยานยนต์ (Motorcycle)": "motorcycle"
     }
     selected_mode_display = st.selectbox("ประเภทนำทาง", list(travel_mode_options.keys()), index=0)
-    # แปลงจากชื่อที่มี Emoji กลับเป็นค่า string ภาษาอังกฤษเพื่อส่งให้ API
     TRAVEL_MODE = travel_mode_options[selected_mode_display] 
     
     AVOID_AREA = st.text_area("พิกัดพื้นที่ห้ามผ่าน (ขึ้นบรรทัดใหม่สำหรับกล่องถัดไป)", value="", height=100)
-    st.caption("รูปแบบ: Lat,Long มุมที่ 1 : Lat,Long มุมที่ 2\nเช่น: 14.875,102.015:14.874,102.016")
 
-TOTAL_NET_CAPACITY = int((450 - ICE_PER_COOLER) * NUM_COOLERS)
 EMISSION_FACTOR = 2.70757206 
 
 # ==========================================
@@ -152,9 +141,6 @@ else:
     st.info("💡 กรุณาอัปโหลดไฟล์ข้อมูลลูกค้าเพื่อเริ่มการวิเคราะห์")
     st.stop()
 
-# ==========================================
-# ฟังก์ชันคำนวณพื้นฐาน
-# ==========================================
 def time_to_min(t_str):
     try:
         h, m = map(int, str(t_str).split(':'))
@@ -176,20 +162,27 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
     
     total_vehicles = len(active_vehicles)
     if total_vehicles == 0:
-        st.error("❌ กรุณาระบุจำนวนรถที่พร้อมใช้งานอย่างน้อย 1 คันในแผงควบคุมด้านข้าง")
+        st.error("❌ กรุณาระบุจำนวนรถที่พร้อมใช้งานอย่างน้อย 1 คัน")
         st.stop()
 
+    # ✨ ปรับตรรกะการคำนวณ Demand เป็นน้ำหนักจริงรวมบรรจุภัณฑ์ (กิโลกรัม)
     demands = []
     for i, row in edited_df.iterrows():
         if i == 0: demands.append(0); continue
-        vol = (float(row.get("200cc", 0)) * 0.2) + (float(row.get("2L", 0)) * 2.0) + (float(row.get("5L", 0)) * 5.0)
-        demands.append(math.ceil(vol * (1.0 + DEAD_SPACE_RATIO)))
+        
+        # น้ำหนักน้ำนม (ลิตร * 1.03) + น้ำหนักขวดเปล่าพลาสติก HDPE
+        w_200cc = float(row.get("200cc", 0)) * 0.221  # นม 0.206 kg + ขวด 0.015 kg
+        w_2l = float(row.get("2L", 0)) * 2.12        # นม 2.060 kg + ขวด 0.060 kg
+        w_5l = float(row.get("5L", 0)) * 5.28        # นม 5.150 kg + ขวด 0.130 kg
+        
+        total_weight_kg = w_200cc + w_2l + w_5l
+        demands.append(math.ceil(total_weight_kg * (1.0 + DEAD_SPACE_RATIO)))
     
-    if sum(demands) > (TOTAL_NET_CAPACITY * total_vehicles):
-        st.error(f"❌ น้ำหนักสินค้ารวมเกินความจุของรถทั้งหมด (ต้องการรถเพิ่ม)")
+    if sum(demands) > (MAX_WEIGHT_CAPACITY * total_vehicles):
+        st.error(f"❌ น้ำหนักรวม ({sum(demands)} kg) เกินความจุของรถทั้งหมดรวมกัน ({MAX_WEIGHT_CAPACITY * total_vehicles} kg)")
         st.stop()
         
-    with st.spinner(f'กำลังใช้สมองกลคำนวณเส้นทางสำหรับรถ {total_vehicles} คัน...'):
+    with st.spinner(f'กำลังใช้สมองกลคำนวณเส้นทางจำกัดน้ำหนักสำหรับรถ {total_vehicles} คัน...'):
         coords = edited_df[['Lat', 'Lon']].values.tolist()
         dist_matrix = [[haversine_distance(coords[i], coords[j]) for j in range(len(coords))] for i in range(len(coords))]
         
@@ -220,7 +213,8 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         def demand_callback(idx): return demands[manager.IndexToNode(idx)]
         demand_idx = routing.RegisterUnaryTransitCallback(demand_callback)
         
-        routing.AddDimensionWithVehicleCapacity(demand_idx, 0, [TOTAL_NET_CAPACITY] * total_vehicles, True, "Capacity")
+        # ✨ ปรับขีดจำกัดตัวแปรความจุสัมภาระในสมองกลให้เป็นข้อจำกัดน้ำหนัก (กิโลกรัม)
+        routing.AddDimensionWithVehicleCapacity(demand_idx, 0, [MAX_WEIGHT_CAPACITY] * total_vehicles, True, "Capacity")
 
         search_params = pywrapcp.DefaultRoutingSearchParameters()
         search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
@@ -247,8 +241,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
 
         route_results = []
         map_colors = ['#2980B9', '#27AE60', '#8E44AD', '#E67E22', '#C0392B', '#D35400', '#16A085']
-        
-        # ✨ สังเกตว่าพารามิเตอร์ TRAVEL_MODE ที่ส่งเข้า API จะเป็นคำภาษาอังกฤษล้วนแล้วครับ
         api_params = {"key": API_KEY, "travelMode": TRAVEL_MODE}
         
         rectangles = []
@@ -401,4 +393,4 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
             st.download_button("📥 ดาวน์โหลดใบงาน Excel", buf.getvalue(), "MilkRun_Detail_Plan.xlsx", use_container_width=True)
 
     else:
-        st.error("❌ หาเส้นทางไม่ได้ (เงื่อนไขเวลาตึงเกินไป หรือน้ำหนักรวมเกินรถที่มี)")
+        st.error("❌ หาเส้นทางไม่ได้ (เงื่อนไขเวลาตึงเกินไป หรือน้ำหนักรวมเกินกำลังรถ)")
