@@ -52,22 +52,29 @@ with st.sidebar:
     API_KEY = st.text_input("TomTom API Key", value="X8xbhfCgq1Tp192jy5KinmhP8wguznSu", type="password")
     
     st.header("⏱️ การปฏิบัติงาน")
-    DEPART_TIME = st.time_input("เวลาเริ่มออกรถจากฟาร์ม", datetime.strptime("11:20", "%H:%M").time())
+    DEPART_TIME = st.time_input("เวลาเริ่มออกรถจากฟาร์ม", datetime.strptime("11:00", "%H:%M").time())
     SERVICE_TIME_SEC = st.number_input("เวลาลงนมเฉลี่ยต่อจุด (วินาที)", min_value=0, value=45, step=5)
     
     st.header("⛽ ราคาน้ำมัน")
-    # --- ระบบเลือกชนิดน้ำมัน Real-time ---
     oil_data, update_date = fetch_today_oil_price()
     if oil_data:
         st.success(f"อัปเดตราคาล่าสุด: {update_date}")
-        selected_oil = st.selectbox("เลือกชนิดน้ำมัน", list(oil_data.keys()))
+        
+        oil_list = list(oil_data.keys())
+        default_oil_idx = 0
+        for i, name in enumerate(oil_list):
+            if "ดีเซล" in name:
+                default_oil_idx = i
+                break
+                
+        selected_oil = st.selectbox("เลือกชนิดน้ำมัน", oil_list, index=default_oil_idx)
         THB_L = st.number_input("ราคาน้ำมัน (THB/L)", value=float(oil_data[selected_oil]), step=0.5, format="%.2f")
     else:
         st.warning("⚠️ ไม่สามารถดึงข้อมูลราคา Real-time ได้ (ใช้ราคาประเมิน)")
         THB_L = st.number_input("ราคาน้ำมัน (THB/L)", min_value=1.0, value=35.0, step=0.5, format="%.2f")
     
     # ------------------------------------
-    # ✨ ส่วนที่เพิ่มใหม่: จัดการประเภทยานพาหนะและอัตราสิ้นเปลือง
+    # ข้อมูลยานพาหนะ
     # ------------------------------------
     st.header("🚚 ข้อมูลยานพาหนะ")
     st.markdown("**ระบุจำนวนรถแต่ละประเภทที่มีพร้อมใช้งาน**")
@@ -76,7 +83,8 @@ with st.sidebar:
         num_pickup = st.number_input("รถกระบะ (คัน)", min_value=0, value=0, step=1)
         num_4w = st.number_input("บรรทุก 4 ล้อ (คัน)", min_value=0, value=0, step=1)
     with col2:
-        num_box = st.number_input("กระบะตู้ทึบ (คัน)", min_value=0, value=3, step=1)
+        # ✨ ปรับค่าเริ่มต้นกระบะตู้ทึบเป็น 1
+        num_box = st.number_input("กระบะตู้ทึบ (คัน)", min_value=0, value=1, step=1)
         num_6w = st.number_input("บรรทุก 6 ล้อ (คัน)", min_value=0, value=0, step=1)
 
     st.markdown("**⛽ อัตราสิ้นเปลืองน้ำมันขณะวิ่ง (km/L)**")
@@ -97,13 +105,11 @@ with st.sidebar:
         idle_box = st.number_input("กระบะตู้ทึบ", min_value=0.1, value=1.5, step=0.1, key="id_b")
         idle_6w = st.number_input("บรรทุก 6 ล้อ", min_value=0.1, value=2.5, step=0.1, key="id_6")
 
-    # รวบรวมรถที่พร้อมใช้งานเข้า List
     active_vehicles = []
     for _ in range(num_pickup): active_vehicles.append({'type': 'รถกระบะ', 'km_l': km_l_pickup, 'idle': idle_pickup})
     for _ in range(num_box): active_vehicles.append({'type': 'กระบะตู้ทึบ', 'km_l': km_l_box, 'idle': idle_box})
     for _ in range(num_4w): active_vehicles.append({'type': 'บรรทุก 4 ล้อ', 'km_l': km_l_4w, 'idle': idle_4w})
     for _ in range(num_6w): active_vehicles.append({'type': 'บรรทุก 6 ล้อ', 'km_l': km_l_6w, 'idle': idle_6w})
-    # ------------------------------------
 
     st.header("📦 พื้นที่บรรทุก (ต่อคัน)")
     NUM_COOLERS = st.number_input("จำนวนถัง (ใบ)", min_value=1, value=2, step=1)
@@ -111,7 +117,18 @@ with st.sidebar:
     DEAD_SPACE_RATIO = 0.15 
     
     st.header("🚧 ข้อจำกัดเส้นทาง")
-    TRAVEL_MODE = st.selectbox("ประเภทนำทาง", ["car", "van", "truck", "motorcycle"], index=0) 
+    
+    # ✨ ปรับปรุงการเลือกประเภทนำทางให้มี Emoji
+    travel_mode_options = {
+        "🚗 รถยนต์ (Car)": "car",
+        "🚐 รถตู้ (Van)": "van",
+        "🚚 รถบรรทุก (Truck)": "truck",
+        "🏍️ รถจักรยานยนต์ (Motorcycle)": "motorcycle"
+    }
+    selected_mode_display = st.selectbox("ประเภทนำทาง", list(travel_mode_options.keys()), index=0)
+    # แปลงจากชื่อที่มี Emoji กลับเป็นค่า string ภาษาอังกฤษเพื่อส่งให้ API
+    TRAVEL_MODE = travel_mode_options[selected_mode_display] 
+    
     AVOID_AREA = st.text_area("พิกัดพื้นที่ห้ามผ่าน (ขึ้นบรรทัดใหม่สำหรับกล่องถัดไป)", value="", height=100)
     st.caption("รูปแบบ: Lat,Long มุมที่ 1 : Lat,Long มุมที่ 2\nเช่น: 14.875,102.015:14.874,102.016")
 
@@ -176,7 +193,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         coords = edited_df[['Lat', 'Lon']].values.tolist()
         dist_matrix = [[haversine_distance(coords[i], coords[j]) for j in range(len(coords))] for i in range(len(coords))]
         
-        # ปรับ Manager ให้รองรับ Multi-vehicle
         manager = pywrapcp.RoutingIndexManager(len(coords), total_vehicles, 0)
         routing = pywrapcp.RoutingModel(manager)
         
@@ -204,7 +220,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         def demand_callback(idx): return demands[manager.IndexToNode(idx)]
         demand_idx = routing.RegisterUnaryTransitCallback(demand_callback)
         
-        # ใส่ความจุให้รถทุกคัน
         routing.AddDimensionWithVehicleCapacity(demand_idx, 0, [TOTAL_NET_CAPACITY] * total_vehicles, True, "Capacity")
 
         search_params = pywrapcp.DefaultRoutingSearchParameters()
@@ -214,7 +229,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         solution = routing.SolveWithParameters(search_params)
 
     if solution:
-        # ดึงเส้นทางของรถแต่ละคันออกมา
         all_routes = []
         for vehicle_id in range(total_vehicles):
             index = routing.Start(vehicle_id)
@@ -222,9 +236,8 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
             while not routing.IsEnd(index):
                 route_indices.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
-            route_indices.append(manager.IndexToNode(index)) # กลับฟาร์ม
+            route_indices.append(manager.IndexToNode(index)) 
             
-            # เก็บเฉพาะคันที่มีงานวิ่ง (มีจุดมากกว่า 2 คือ Start -> ส่งของ -> End)
             if len(route_indices) > 2:
                 all_routes.append({
                     'v_id': vehicle_id, 
@@ -232,14 +245,12 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                     'indices': route_indices
                 })
 
-        # ----------------------------------------------------
-        # การเรียก API TomTom และรวมผลลัพธ์ของรถทุกคัน
-        # ----------------------------------------------------
         route_results = []
         map_colors = ['#2980B9', '#27AE60', '#8E44AD', '#E67E22', '#C0392B', '#D35400', '#16A085']
+        
+        # ✨ สังเกตว่าพารามิเตอร์ TRAVEL_MODE ที่ส่งเข้า API จะเป็นคำภาษาอังกฤษล้วนแล้วครับ
         api_params = {"key": API_KEY, "travelMode": TRAVEL_MODE}
         
-        # จัดการกรอบพื้นที่หลีกเลี่ยง
         rectangles = []
         if AVOID_AREA.strip() != "":
             for line in AVOID_AREA.strip().split('\n'):
@@ -270,17 +281,11 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                 data = res.json()['routes'][0]
                 summary = data['summary']
                 
-                # ระยะทาง
                 dist_km = summary['lengthInMeters'] / 1000
                 travel_time = summary['travelTimeInSeconds']
-                
-                # Delay จากรถติด
                 traffic_delay_sec = summary.get('trafficDelayInSeconds', 0)
                 
-                # --- คำนวณน้ำมัน 2 ส่วน ---
-                # 1. น้ำมันที่ใช้ตอนวิ่งปกติ (ตามระยะทาง)
                 fuel_running = dist_km / v_info['km_l']
-                # 2. น้ำมันที่ใช้ตอนรถติด (ตามเวลา)
                 fuel_idling = (traffic_delay_sec / 3600) * v_info['idle']
                 
                 total_fuel_l = fuel_running + fuel_idling
@@ -302,7 +307,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
             else:
                 st.error(f"❌ API Error สำหรับรถคันที่ {idx+1}: {res.text}")
 
-        # --- Dashboard ---
         st.subheader(f"📊 การวิเคราะห์ผลลัพธ์รวม (ใช้งานรถทั้งหมด {len(route_results)} คัน)")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("ระยะทางรวม", f"{total_dist_km:.2f} กม.")
@@ -311,7 +315,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         hh, mm = divmod(max_time_sec // 60, 60)
         c4.metric("เวลาวิ่งนานสุด (คันที่ช้าสุด)", f"{int(hh)} ชม. {int(mm)} นาที")
 
-        # --- แผนที่และตาราง ---
         col_map, col_table = st.columns([1.3, 1.7])
         with col_map:
             st.subheader("🗺️ แผนที่เส้นทางแยกรถแต่ละคัน")
@@ -322,10 +325,8 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                 attr='TomTom Traffic', name='จราจร', overlay=True, control=True, opacity=0.7
             ).add_to(m)
 
-            # วาดฟาร์ม (จุด 0)
             folium.Marker(coords[0], popup="ฟาร์ม", icon=folium.Icon(color='green', icon='home')).add_to(m)
             
-            # วาดพื้นที่ห้ามผ่าน
             for rect in rectangles:
                 sw, ne = rect['southWestCorner'], rect['northEastCorner']
                 folium.Rectangle(
@@ -333,7 +334,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                     color='#E74C3C', fill=True, fill_color='#E74C3C', fill_opacity=0.3
                 ).add_to(m)
 
-            # วาดเส้นทางและจุดส่งของรถแต่ละคัน
             for rr in route_results:
                 all_points = []
                 for leg in rr['data']['legs']:
