@@ -71,8 +71,8 @@ with st.sidebar:
         st.warning("⚠️ ไม่สามารถดึงข้อมูลราคา Real-time ได้")
         THB_L = st.number_input("ราคาน้ำมัน (THB/L)", min_value=1.0, value=35.0, step=0.5, format="%.2f")
     
-    st.header("🚚 ข้อมูลยานพาหนะ")
-    st.markdown("**ระบุจำนวนรถแต่ละประเภทที่มีพร้อมใช้งาน**")
+    # ✨ จัดรูปแบบ Interface ใหม่ตามภาพต้นแบบ
+    st.header("🚚 จำนวนและประเภทรถ")
     col1, col2 = st.columns(2)
     with col1:
         num_pickup = st.number_input("รถกระบะ (คัน)", min_value=0, value=0, step=1)
@@ -81,38 +81,40 @@ with st.sidebar:
         num_box = st.number_input("กระบะตู้ทึบ (คัน)", min_value=0, value=1, step=1)
         num_6w = st.number_input("บรรทุก 6 ล้อ (คัน)", min_value=0, value=0, step=1)
 
-    st.markdown("**⛽ อัตราสิ้นเปลืองน้ำมันขณะวิ่ง (km/L)**")
+    st.header("⚖️ น้ำหนักสินค้าสูงสุดที่บรรทุกได้จริง (kg) ต่อคัน")
     col3, col4 = st.columns(2)
     with col3:
-        km_l_pickup = st.number_input("รถกระบะ", min_value=1.0, value=12.0, step=0.5, key="km_p")
-        km_l_4w = st.number_input("บรรทุก 4 ล้อ", min_value=1.0, value=8.0, step=0.5, key="km_4")
+        cap_pickup = st.number_input("รถกระบะ", min_value=100, value=1000, step=50, key="cap_p")
+        cap_4w = st.number_input("บรรทุก 4 ล้อ", min_value=100, value=2200, step=50, key="cap_4")
     with col4:
-        km_l_box = st.number_input("กระบะตู้ทึบ", min_value=1.0, value=10.0, step=0.5, key="km_b")
-        km_l_6w = st.number_input("บรรทุก 6 ล้อ", min_value=1.0, value=6.0, step=0.5, key="km_6")
+        cap_box = st.number_input("กระบะตู้ทึบ", min_value=100, value=1500, step=50, key="cap_b")
+        cap_6w = st.number_input("บรรทุก 6 ล้อ", min_value=100, value=9000, step=50, key="cap_6")
 
-    st.markdown("**🛑 อัตราสิ้นเปลืองขณะจอดรถติด (L/h)**")
+    st.header("⛽ อัตราสิ้นเปลืองวิ่ง (km/L) / จอดติด (L/h)")
     col5, col6 = st.columns(2)
     with col5:
-        idle_pickup = st.number_input("รถกระบะ", min_value=0.1, value=1.2, step=0.1, key="id_p")
-        idle_4w = st.number_input("บรรทุก 4 ล้อ", min_value=0.1, value=2.0, step=0.1, key="id_4")
+        km_l_pickup = st.number_input("กระบะ (km/L)", min_value=1.0, value=12.0, step=0.5, key="km_p")
+        idle_pickup = st.number_input("กระบะ (L/h)", min_value=0.1, value=1.2, step=0.1, key="id_p")
+        km_l_4w = st.number_input("4 ล้อ (km/L)", min_value=1.0, value=8.0, step=0.5, key="km_4")
+        idle_4w = st.number_input("4 ล้อ (L/h)", min_value=0.1, value=2.0, step=0.1, key="id_4")
     with col6:
-        idle_box = st.number_input("กระบะตู้ทึบ", min_value=0.1, value=1.5, step=0.1, key="id_b")
-        idle_6w = st.number_input("บรรทุก 6 ล้อ", min_value=0.1, value=2.5, step=0.1, key="id_6")
+        km_l_box = st.number_input("ตู้ทึบ (km/L)", min_value=1.0, value=10.0, step=0.5, key="km_b")
+        idle_box = st.number_input("ตู้ทึบ (L/h)", min_value=0.1, value=1.5, step=0.1, key="id_b")
+        km_l_6w = st.number_input("6 ล้อ (km/L)", min_value=1.0, value=6.0, step=0.5, key="km_6")
+        idle_6w = st.number_input("6 ล้อ (L/h)", min_value=0.1, value=2.5, step=0.1, key="id_6")
 
+    # สร้างข้อมูลโปรไฟล์รถแต่ละคัน (รองรับ Heterogeneous Fleet)
     active_vehicles = []
-    for _ in range(num_pickup): active_vehicles.append({'type': 'รถกระบะ', 'km_l': km_l_pickup, 'idle': idle_pickup})
-    for _ in range(num_box): active_vehicles.append({'type': 'กระบะตู้ทึบ', 'km_l': km_l_box, 'idle': idle_box})
-    for _ in range(num_4w): active_vehicles.append({'type': 'บรรทุก 4 ล้อ', 'km_l': km_l_4w, 'idle': idle_4w})
-    for _ in range(num_6w): active_vehicles.append({'type': 'บรรทุก 6 ล้อ', 'km_l': km_l_6w, 'idle': idle_6w})
+    for _ in range(num_pickup): active_vehicles.append({'type': 'รถกระบะ', 'km_l': km_l_pickup, 'idle': idle_pickup, 'capacity': int(cap_pickup)})
+    for _ in range(num_box): active_vehicles.append({'type': 'กระบะตู้ทึบ', 'km_l': km_l_box, 'idle': idle_box, 'capacity': int(cap_box)})
+    for _ in range(num_4w): active_vehicles.append({'type': 'บรรทุก 4 ล้อ', 'km_l': km_l_4w, 'idle': idle_4w, 'capacity': int(cap_4w)})
+    for _ in range(num_6w): active_vehicles.append({'type': 'บรรทุก 6 ล้อ', 'km_l': km_l_6w, 'idle': idle_6w, 'capacity': int(cap_6w)})
 
-    # ✨ ปรับจากพิกัดปริมาตรถังนม เป็นน้ำหนักบรรทุกเพลาสูงสุดของรถจริง (กิโลกรัม)
-    st.header("⚖️ ขีดจำกัดน้ำหนักบรรทุก")
-    MAX_WEIGHT_CAPACITY = st.number_input("น้ำหนักบรรทุกสูงสุดต่อคัน (kg)", min_value=100, value=1100, step=50)
     DEAD_SPACE_RATIO = 0.15 
     
     st.header("🚧 ข้อจำกัดเส้นทาง")
     travel_mode_options = {
-        "🚗 รถยนต์ (Car)": "car",
+        "🚗 รถยนต์/รถขนส่งถนนปกติ (Car)": "car",
         "🚐 รถตู้ (Van)": "van",
         "🚚 รถบรรทุก (Truck)": "truck",
         "🏍️ รถจักรยานยนต์ (Motorcycle)": "motorcycle"
@@ -120,7 +122,7 @@ with st.sidebar:
     selected_mode_display = st.selectbox("ประเภทนำทาง", list(travel_mode_options.keys()), index=0)
     TRAVEL_MODE = travel_mode_options[selected_mode_display] 
     
-    AVOID_AREA = st.text_area("พิกัดพื้นที่ห้ามผ่าน (ขึ้นบรรทัดใหม่สำหรับกล่องถัดไป)", value="", height=100)
+    AVOID_AREA = st.text_area("พิกัดพื้นที่ห้ามผ่าน (เพื่อใช้วาดแสดงผลบนแผนที่ Folium)", value="", height=100)
 
 EMISSION_FACTOR = 2.70757206 
 
@@ -165,21 +167,24 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         st.error("❌ กรุณาระบุจำนวนรถที่พร้อมใช้งานอย่างน้อย 1 คัน")
         st.stop()
 
-    # ✨ ปรับตรรกะการคำนวณ Demand เป็นน้ำหนักจริงรวมบรรจุภัณฑ์ (กิโลกรัม)
     demands = []
     for i, row in edited_df.iterrows():
         if i == 0: demands.append(0); continue
         
         # น้ำหนักน้ำนม (ลิตร * 1.03) + น้ำหนักขวดเปล่าพลาสติก HDPE
-        w_200cc = float(row.get("200cc", 0)) * 0.221  # นม 0.206 kg + ขวด 0.015 kg
-        w_2l = float(row.get("2L", 0)) * 2.12        # นม 2.060 kg + ขวด 0.060 kg
-        w_5l = float(row.get("5L", 0)) * 5.28        # นม 5.150 kg + ขวด 0.130 kg
+        w_200cc = float(row.get("200cc", 0)) * 0.221  
+        w_2l = float(row.get("2L", 0)) * 2.12        
+        w_5l = float(row.get("5L", 0)) * 5.28        
         
         total_weight_kg = w_200cc + w_2l + w_5l
         demands.append(math.ceil(total_weight_kg * (1.0 + DEAD_SPACE_RATIO)))
     
-    if sum(demands) > (MAX_WEIGHT_CAPACITY * total_vehicles):
-        st.error(f"❌ น้ำหนักรวม ({sum(demands)} kg) เกินความจุของรถทั้งหมดรวมกัน ({MAX_WEIGHT_CAPACITY * total_vehicles} kg)")
+    # ดึงขีดจำกัดความจุของรถแต่ละคันออกมาเป็น List 
+    vehicle_capacities = [v['capacity'] for v in active_vehicles]
+    total_fleet_capacity = sum(vehicle_capacities)
+    
+    if sum(demands) > total_fleet_capacity:
+        st.error(f"❌ น้ำหนักรวม ({sum(demands)} kg) เกินความจุของรถทั้งหมดรวมกัน ({total_fleet_capacity} kg)")
         st.stop()
         
     with st.spinner(f'กำลังใช้สมองกลคำนวณเส้นทางจำกัดน้ำหนักสำหรับรถ {total_vehicles} คัน...'):
@@ -213,8 +218,8 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         def demand_callback(idx): return demands[manager.IndexToNode(idx)]
         demand_idx = routing.RegisterUnaryTransitCallback(demand_callback)
         
-        # ✨ ปรับขีดจำกัดตัวแปรความจุสัมภาระในสมองกลให้เป็นข้อจำกัดน้ำหนัก (กิโลกรัม)
-        routing.AddDimensionWithVehicleCapacity(demand_idx, 0, [MAX_WEIGHT_CAPACITY] * total_vehicles, True, "Capacity")
+        # โยนค่า Array น้ำหนักบรรทุกของรถแต่ละประเภทเข้าสู่สมองกล
+        routing.AddDimensionWithVehicleCapacity(demand_idx, 0, vehicle_capacities, True, "Capacity")
 
         search_params = pywrapcp.DefaultRoutingSearchParameters()
         search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
