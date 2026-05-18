@@ -226,7 +226,7 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         for vehicle_id in range(total_vehicles):
             index = routing.Start(vehicle_id)
             route_indices = []
-            route_payload = 0 # ตัวแปรเก็บน้ำหนักรวมของรถแต่ละคัน
+            route_payload = 0
             
             while not routing.IsEnd(index):
                 node_idx = manager.IndexToNode(index)
@@ -240,7 +240,7 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                     'v_id': vehicle_id, 
                     'v_info': active_vehicles[vehicle_id], 
                     'indices': route_indices,
-                    'payload': route_payload # นำน้ำหนักที่คำนวณได้ไปใช้งานต่อ
+                    'payload': route_payload 
                 })
 
         route_results = []
@@ -299,7 +299,7 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                     'indices': indices,
                     'color': map_colors[idx % len(map_colors)],
                     'v_info': v_info,
-                    'payload': route['payload'] # ส่งค่าไปวาด Progress bar
+                    'payload': route['payload']
                 })
             else:
                 st.error(f"❌ API Error สำหรับรถคันที่ {idx+1}: {res.text}")
@@ -323,7 +323,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
             payload = route['payload']
             capacity = v_info['capacity']
             
-            # ป้องกันค่าติดลบหรือล้น 100% จากการปัดเศษของสมองกล
             progress_ratio = max(0.0, min(payload / capacity, 1.0))
             percent_int = int(progress_ratio * 100)
             
@@ -370,52 +369,81 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
             folium.LayerControl().add_to(m)
             st_folium(m, width="100%", height=500, returned_objects=[])
 
+        # =========================================================
+        # ✨ อัปเดตตารางวิเคราะห์คิวงาน ให้แยกเป็นรายคัน
+        # =========================================================
         with col_table:
-            st.subheader("📋 ตารางวิเคราะห์คิวงานรวม")
-            schedule = []
-            
-            for rr in route_results:
-                curr_time = datetime.combine(datetime.today(), DEPART_TIME)
-                v_info = rr['v_info']
-                
-                for i, n in enumerate(rr['indices'][:-1]):
-                    t_min, l_dist, fuel_used = 0, 0.0, 0.0
-                    loc_data = edited_df.iloc[n]
-                    
-                    if i > 0:
-                        leg = rr['data']['legs'][i-1]['summary']
-                        t_min = math.ceil(leg['travelTimeInSeconds'] / 60)
-                        l_dist = leg['lengthInMeters'] / 1000
-                        delay = leg.get('trafficDelayInSeconds', 0)
-                        
-                        f_run = l_dist / v_info['km_l']
-                        f_idle = (delay / 3600) * v_info['idle']
-                        fuel_used = f_run + f_idle
-                        
-                        curr_time += timedelta(minutes=t_min)
-                    
-                    maps_url = f"https://www.google.com/maps/dir/?api=1&destination={loc_data['Lat']},{loc_data['Lon']}"
-                    
-                    schedule.append({
-                        "คันที่": rr['car_name'],
-                        "สถานที่": loc_data["ชื่อสถานที่"] if i > 0 else "ออกเดินทางจากฟาร์ม", 
-                        "ถึงเวลา": curr_time.strftime("%H:%M"),
-                        "ระยะทาง(กม.)": f"{l_dist:.2f}" if i > 0 else "-",
-                        "น้ำมัน(L)": f"{fuel_used:.2f}" if i > 0 else "-", 
-                        "นำทาง": maps_url if i > 0 else None
-                    })
-                    curr_time += timedelta(seconds=SERVICE_TIME_SEC)
-            
-            df_schedule = pd.DataFrame(schedule)
-            st.dataframe(
-                df_schedule, use_container_width=True, hide_index=True,
-                column_config={"นำทาง": st.column_config.LinkColumn("📍 นำทาง", display_text="เปิดแผนที่")}
-            )
+            st.subheader("📋 ตารางวิเคราะห์ลำดับคิวงาน (แยกรายคัน)")
             
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
-                df_schedule.to_excel(writer, index=False, sheet_name='MilkRun_Plan')
-            st.download_button("📥 ดาวน์โหลดใบงาน Excel", buf.getvalue(), "MilkRun_Detail_Plan.xlsx", use_container_width=True)
+                
+                for rr in route_results:
+                    v_color = rr['color']
+                    car_name = rr['car_name']
+                    v_info = rr['v_info']
+                    
+                    st.markdown(f"#### <span style='color:{v_color};'>🚚 ใบงาน: {car_name}</span>", unsafe_allow_html=True)
+                    
+                    schedule = []
+                    curr_time = datetime.combine(datetime.today(), DEPART_TIME)
+                    
+                    for i, n in enumerate(rr['indices'][:-1]):
+                        loc_data = edited_df.iloc[n]
+                        t_min, l_dist, delay_min, co2_leg = 0, 0.0, 0.0, 0.0
+                        traffic_status = "-"
+                        
+                        if i > 0:
+                            leg = rr['data']['legs'][i-1]['summary']
+                            t_min = math.ceil(leg['travelTimeInSeconds'] / 60)
+                            l_dist = leg['lengthInMeters'] / 1000
+                            delay_sec = leg.get('trafficDelayInSeconds', 0)
+                            delay_min = delay_sec / 60.0
+                            
+                            # คำนวณ CO2 รายเส้นทาง
+                            f_run = l_dist / v_info['km_l']
+                            f_idle = (delay_sec / 3600) * v_info['idle']
+                            fuel_used = f_run + f_idle
+                            co2_leg = fuel_used * EMISSION_FACTOR
+                            
+                            # วิเคราะห์สภาพจราจรจาก Delay
+                            if delay_min <= 1:
+                                traffic_status = "🟢 เดินรถคล่องตัว"
+                            elif delay_min <= 5:
+                                traffic_status = "🟡 ชะลอตัว"
+                            else:
+                                traffic_status = "🔴 ติดขัด"
+                            
+                            curr_time += timedelta(minutes=t_min)
+                        
+                        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={loc_data['Lat']},{loc_data['Lon']}"
+                        
+                        schedule.append({
+                            "คิว": "Start" if i == 0 else i,
+                            "สถานที่": loc_data["ชื่อสถานที่"] if i > 0 else "ออกเดินทางจากฟาร์ม", 
+                            "ถึงเวลา": curr_time.strftime("%H:%M"),
+                            "ระยะทาง(กม.)": f"{l_dist:.2f}" if i > 0 else "-",
+                            "สภาพจราจร": traffic_status,
+                            "รถติด(นาที)": f"{delay_min:.1f}" if i > 0 else "-",
+                            "CO2(kg)": f"{co2_leg:.2f}" if i > 0 else "-",
+                            "ลิงก์นำทาง": maps_url if i > 0 else None
+                        })
+                        curr_time += timedelta(seconds=SERVICE_TIME_SEC)
+                    
+                    df_schedule = pd.DataFrame(schedule)
+                    
+                    # ตารางแสดงผลแยกรายคัน
+                    st.dataframe(
+                        df_schedule, use_container_width=True, hide_index=True,
+                        column_config={"ลิงก์นำทาง": st.column_config.LinkColumn("📍 ลิงก์นำทาง", display_text="เปิดแผนที่")}
+                    )
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # บันทึกลง Excel โดยตั้งชื่อ Sheet ตามชื่อรถ
+                    sheet_name = f"{car_name}".replace(":", "_").replace("(", "").replace(")", "").replace("/", "").strip()[:31]
+                    df_schedule.to_excel(writer, index=False, sheet_name=sheet_name)
+            
+            st.download_button("📥 ดาวน์โหลดใบงาน Excel (แยก Sheet)", buf.getvalue(), "SUTMR_TomTom_Plan.xlsx", use_container_width=True)
 
     else:
         st.error("❌ หาเส้นทางไม่ได้ (เงื่อนไขเวลาตึงเกินไป หรือน้ำหนักรวมเกินกำลังรถ)")
