@@ -312,9 +312,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         hh, mm = divmod(max_time_sec // 60, 60)
         c4.metric("เวลาวิ่งนานสุด (คันที่ช้าสุด)", f"{int(hh)} ชม. {int(mm)} นาที")
 
-        # =========================================================
-        # ✨ เพิ่มส่วน UI สำหรับวาดหลอด Progress Bar น้ำหนักสินค้า
-        # =========================================================
         st.markdown("---")
         st.subheader("📦 Status การบรรทุกน้ำหนักสินค้าจริงของรถแต่ละคัน (Cargo Payload Status)")
         
@@ -369,9 +366,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
             folium.LayerControl().add_to(m)
             st_folium(m, width="100%", height=500, returned_objects=[])
 
-        # =========================================================
-        # ✨ อัปเดตตารางวิเคราะห์คิวงาน ให้แยกเป็นรายคัน
-        # =========================================================
         with col_table:
             st.subheader("📋 ตารางวิเคราะห์ลำดับคิวงาน (แยกรายคัน)")
             
@@ -400,13 +394,11 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                             delay_sec = leg.get('trafficDelayInSeconds', 0)
                             delay_min = delay_sec / 60.0
                             
-                            # คำนวณ CO2 รายเส้นทาง
                             f_run = l_dist / v_info['km_l']
                             f_idle = (delay_sec / 3600) * v_info['idle']
                             fuel_used = f_run + f_idle
                             co2_leg = fuel_used * EMISSION_FACTOR
                             
-                            # วิเคราะห์สภาพจราจรจาก Delay
                             if delay_min <= 1:
                                 traffic_status = "🟢 เดินรถคล่องตัว"
                             elif delay_min <= 5:
@@ -432,18 +424,72 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                     
                     df_schedule = pd.DataFrame(schedule)
                     
-                    # ตารางแสดงผลแยกรายคัน
                     st.dataframe(
                         df_schedule, use_container_width=True, hide_index=True,
                         column_config={"ลิงก์นำทาง": st.column_config.LinkColumn("📍 ลิงก์นำทาง", display_text="เปิดแผนที่")}
                     )
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # บันทึกลง Excel โดยตั้งชื่อ Sheet ตามชื่อรถ
                     sheet_name = f"{car_name}".replace(":", "_").replace("(", "").replace(")", "").replace("/", "").strip()[:31]
                     df_schedule.to_excel(writer, index=False, sheet_name=sheet_name)
             
-            st.download_button("📥 ดาวน์โหลดใบงาน Excel (แยก Sheet)", buf.getvalue(), "SUTMR_TomTom_Plan.xlsx", use_container_width=True)
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1:
+                st.download_button("📥 ดาวน์โหลดใบงาน Excel (แยก Sheet)", buf.getvalue(), "SUTMR_TomTom_Plan.xlsx", use_container_width=True)
+            
+            # =========================================================
+            # ✨ สร้างข้อมูล KML สำหรับ Export
+            # =========================================================
+            kml_str = '<?xml version="1.0" encoding="UTF-8"?>\n'
+            kml_str += '<kml xmlns="http://www.opengis.net/kml/2.2">\n'
+            kml_str += '  <Document>\n'
+            kml_str += '    <name>SUTMR Optimized Routes</name>\n'
+
+            # สร้างจุดหมุด (Placemarks) ให้กับสถานที่
+            added_nodes = set()
+            for rr in route_results:
+                for n in rr['indices']:
+                    if n not in added_nodes:
+                        loc_name = edited_df.iloc[n]['ชื่อสถานที่'] if n > 0 else "ฟาร์ม (Farm)"
+                        lat = edited_df.iloc[n]['Lat']
+                        lon = edited_df.iloc[n]['Lon']
+                        kml_str += '    <Placemark>\n'
+                        kml_str += f'      <name>{loc_name}</name>\n'
+                        kml_str += '      <Point>\n'
+                        kml_str += f'        <coordinates>{lon},{lat},0</coordinates>\n'
+                        kml_str += '      </Point>\n'
+                        kml_str += '    </Placemark>\n'
+                        added_nodes.add(n)
+
+            # สร้างเส้นทางของแต่ละคัน
+            for rr in route_results:
+                car_name = rr['car_name']
+                color_hex = rr['color'].replace('#', '')
+                kml_color = f"ff{color_hex[4:6]}{color_hex[2:4]}{color_hex[0:2]}" # แปลง #RRGGBB เป็น AABBGGRR
+                
+                kml_str += '    <Placemark>\n'
+                kml_str += f'      <name>เส้นทาง: {car_name}</name>\n'
+                kml_str += '      <Style>\n'
+                kml_str += '        <LineStyle>\n'
+                kml_str += f'          <color>{kml_color}</color>\n'
+                kml_str += '          <width>5</width>\n'
+                kml_str += '        </LineStyle>\n'
+                kml_str += '      </Style>\n'
+                kml_str += '      <LineString>\n'
+                kml_str += '        <tessellate>1</tessellate>\n'
+                kml_str += '        <coordinates>\n'
+                for leg in rr['data']['legs']:
+                    for p in leg['points']:
+                        kml_str += f"          {p['longitude']},{p['latitude']},0\n"
+                kml_str += '        </coordinates>\n'
+                kml_str += '      </LineString>\n'
+                kml_str += '    </Placemark>\n'
+                
+            kml_str += '  </Document>\n'
+            kml_str += '</kml>'
+
+            with c_btn2:
+                st.download_button("🗺️ ดาวน์โหลดเส้นทาง (KML)", kml_str.encode('utf-8'), "SUTMR_Routes.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
 
     else:
         st.error("❌ หาเส้นทางไม่ได้ (เงื่อนไขเวลาตึงเกินไป หรือน้ำหนักรวมเกินกำลังรถ)")
