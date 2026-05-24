@@ -122,6 +122,25 @@ with st.sidebar:
     
     AVOID_AREA = st.text_area("พิกัดพื้นที่ห้ามผ่าน (เพื่อใช้วาดแสดงผลบนแผนที่ Folium)", value="", height=100)
 
+    # =========================================================
+    # ✨ เพิ่ม UI ตั้งค่าสมองกลจัดเส้นทาง (Algorithm Settings)
+    # =========================================================
+    st.header("⚙️ ตั้งค่าสมองกลจัดเส้นทาง")
+    
+    st.markdown("1. อัลกอริทึมร่างเส้นทางตั้งต้น")
+    first_solution_options = {
+        "SAVINGS (ประหยัดระยะทางที่สุด)": routing_enums_pb2.FirstSolutionStrategy.SAVINGS,
+        "AUTOMATIC (ให้ระบบเลือกอัตโนมัติ)": routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC,
+        "PATH_CHEAPEST_ARC (เชื่อมจุดใกล้สุด)": routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC,
+        "GLOBAL_CHEAPEST_ARC (จับคู่ใกล้สุดทั่วแผนที่)": routing_enums_pb2.FirstSolutionStrategy.GLOBAL_CHEAPEST_ARC
+    }
+    # ค่า Default คือ SAVINGS (index=0)
+    selected_fs_name = st.selectbox("เลือกอัลกอริทึม", list(first_solution_options.keys()), index=0, label_visibility="collapsed")
+    SELECTED_FIRST_SOLUTION = first_solution_options[selected_fs_name]
+
+    st.markdown("2. สมองกลปรับปรุงเส้นทาง")
+    st.success("🧠 GUIDED_LOCAL_SEARCH (เปิดใช้งานถาวร)")
+
 EMISSION_FACTOR = 2.70757206 
 
 # ==========================================
@@ -215,8 +234,9 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         demand_idx = routing.RegisterUnaryTransitCallback(demand_callback)
         routing.AddDimensionWithVehicleCapacity(demand_idx, 0, vehicle_capacities, True, "Capacity")
 
+        # ✨ ปรับการรับค่าอัลกอริทึมจากแถบตั้งค่า
         search_params = pywrapcp.DefaultRoutingSearchParameters()
-        search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
+        search_params.first_solution_strategy = SELECTED_FIRST_SOLUTION
         search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         search_params.time_limit.seconds = 5
         solution = routing.SolveWithParameters(search_params)
@@ -445,7 +465,6 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
             kml_str += '  <Document>\n'
             kml_str += '    <name>SUTMR Optimized Routes</name>\n'
 
-            # สร้างจุดหมุด (Placemarks) ให้กับสถานที่
             added_nodes = set()
             for rr in route_results:
                 for n in rr['indices']:
@@ -461,11 +480,10 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
                         kml_str += '    </Placemark>\n'
                         added_nodes.add(n)
 
-            # สร้างเส้นทางของแต่ละคัน
             for rr in route_results:
                 car_name = rr['car_name']
                 color_hex = rr['color'].replace('#', '')
-                kml_color = f"ff{color_hex[4:6]}{color_hex[2:4]}{color_hex[0:2]}" # แปลง #RRGGBB เป็น AABBGGRR
+                kml_color = f"ff{color_hex[4:6]}{color_hex[2:4]}{color_hex[0:2]}" 
                 
                 kml_str += '    <Placemark>\n'
                 kml_str += f'      <name>เส้นทาง: {car_name}</name>\n'
