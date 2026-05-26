@@ -128,11 +128,15 @@ with st.sidebar:
     st.header("⚙️ ตั้งค่าสมองกลจัดเส้นทาง")
     
     st.markdown("1. อัลกอริทึมร่างเส้นทางตั้งต้น")
+    
+    # ✨ อัปเดต: เพิ่มอัลกอริทึม Insertion เข้าไปในตัวเลือก
     first_solution_options = {
         "SAVINGS (ประหยัดระยะทางที่สุด)": routing_enums_pb2.FirstSolutionStrategy.SAVINGS,
         "AUTOMATIC (ให้ระบบเลือกอัตโนมัติ)": routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC,
         "PATH_CHEAPEST_ARC (เชื่อมจุดใกล้สุด)": routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC,
-        "GLOBAL_CHEAPEST_ARC (จับคู่ใกล้สุดทั่วแผนที่)": routing_enums_pb2.FirstSolutionStrategy.GLOBAL_CHEAPEST_ARC
+        "GLOBAL_CHEAPEST_ARC (จับคู่ใกล้สุดทั่วแผนที่)": routing_enums_pb2.FirstSolutionStrategy.GLOBAL_CHEAPEST_ARC,
+        "PARALLEL_CHEAPEST_INSERTION (แทรกคิวลงรถพร้อมกันทุกคัน)": routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION,
+        "LOCAL_CHEAPEST_INSERTION (แทรกคิวลงรถทีละคัน)": routing_enums_pb2.FirstSolutionStrategy.LOCAL_CHEAPEST_INSERTION
     }
     # ค่า Default คือ SAVINGS (index=0)
     selected_fs_name = st.selectbox("เลือกอัลกอริทึม", list(first_solution_options.keys()), index=0, label_visibility="collapsed")
@@ -234,7 +238,7 @@ if st.button("🚀 ประมวลผลเส้นทางและวิ�
         demand_idx = routing.RegisterUnaryTransitCallback(demand_callback)
         routing.AddDimensionWithVehicleCapacity(demand_idx, 0, vehicle_capacities, True, "Capacity")
 
-        # ✨ ปรับการรับค่าอัลกอริทึมจากแถบตั้งค่า
+        # ✨ รับค่าอัลกอริทึมจากแถบตั้งค่า
         search_params = pywrapcp.DefaultRoutingSearchParameters()
         search_params.first_solution_strategy = SELECTED_FIRST_SOLUTION
         search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
