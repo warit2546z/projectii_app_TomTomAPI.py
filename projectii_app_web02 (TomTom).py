@@ -41,8 +41,8 @@ def fetch_today_oil_price():
 # 1. ตั้งค่าหน้าเพจ UI
 # ==========================================
 st.set_page_config(page_title="Milk Run Optimization", page_icon="🚚", layout="wide")
-st.title("🚚 ระบบวางแผนเส้นทางขนส่งนม (VRP Weight-Based Optimization)")
-st.markdown("ระบบวิเคราะห์เส้นทางคำนวณจากน้ำหนักจริงรวมบรรจุภัณฑ์ พร้อมการนำทางจริงผ่าน TomTom API")
+st.title("🚚 SUT Daily Route Planing")
+st.markdown("แอปพลิเคชันเพื่อการวางแผนขนส่งสินค้าประเภทนม")
 
 # ==========================================
 # 2. แผงควบคุมด้านข้าง (Sidebar)
